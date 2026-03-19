@@ -1,4 +1,4 @@
-// screens/ImageTranslatorScreen.js
+// screens/ImageTranslatorScreen.js - FIXED with Google Vision OCR
 import React, { useState } from 'react';
 import {
   View,
@@ -7,172 +7,192 @@ import {
   StyleSheet,
   ScrollView,
   Image,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 
-const FAKE_LANGUAGES = {
-  'English': { code: 'en', native: 'English' },
-  'Hindi': { code: 'hi', native: 'हिंदी' },
-  'French': { code: 'fr', native: 'Français' },
-  'Spanish': { code: 'es', native: 'Español' },
-  'German': { code: 'de', native: 'Deutsch' },
-};
-
-// Fake translations (replace with real Google Translate API later)
-const FAKE_TRANSLATIONS = {
-  'Bonjour le monde': { en: 'Hello world', hi: 'नमस्ते दुनिया', es: 'Hola mundo' },
-  '¡Hola amigos!': { en: 'Hello friends!', hi: 'नमस्ते दोस्तों!', es: '¡Hola amigos!' },
-  'Guten Tag': { en: 'Good day', hi: 'नमस्कार', de: 'Guten Tag' },
-  'नमस्ते भारत': { en: 'Hello India', hi: 'नमस्ते भारत' },
-};
-
-function LanguagePicker({ 
-  selectedLang, 
-  onLangChange, 
-  label 
-}) {
-  return (
-    <View style={styles.langPicker}>
-      <Text style={styles.pickerLabel}>{label}</Text>
-      <View style={styles.langRow}>
-        {Object.entries(FAKE_LANGUAGES).map(([name, data]) => (
-          <TouchableOpacity
-            key={name}
-            style={[
-              styles.langButton,
-              selectedLang === name && styles.langButtonActive,
-            ]}
-            onPress={() => onLangChange(name)}
-          >
-            <Text
-              style={[
-                styles.langText,
-                selectedLang === name && styles.langTextActive,
-              ]}
-            >
-              {data.native}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    </View>
-  );
-}
+// REPLACE WITH YOUR GOOGLE VISION API KEY
+const GOOGLE_VISION_KEY = 'AIzaSyAzarJuuFzjtw8Y6OnOYRbd1s4pX2wIOa4E';
 
 export default function ImageTranslatorScreen() {
-  const [step, setStep] = useState('camera'); // camera, processing, result
-  const [detectedText, setDetectedText] = useState('');
-  const [translatedText, setTranslatedText] = useState('');
-  const [fromLang, setFromLang] = useState('French');
-  const [toLang, setToLang] = useState('Hindi');
-  const [showImage, setShowImage] = useState(false);
+  const [image, setImage] = useState(null);
+  const [extractedText, setExtractedText] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState(1);
 
-  const handleCapture = () => {
-    // Simulate camera capture
-    setTimeout(() => {
-      setDetectedText('Bonjour le monde');
-      setStep('processing');
-      setShowImage(true);
-    }, 800);
+  // Pick from camera
+  const pickFromCamera = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed for camera');
+      return;
+    }
+
+    let result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 1,
+      base64: true,
+    });
+
+    if (!result.canceled) {
+      setImage(result.assets[0].uri);
+      setStep(2);
+    }
   };
 
-  const handleProcess = () => {
-    // Simulate OCR + translation
-    setTimeout(() => {
-      const translation = FAKE_TRANSLATIONS['Bonjour le monde']?.[toLang] || 
-                         FAKE_TRANSLATIONS['Bonjour le monde'].en;
-      setTranslatedText(translation);
-      setStep('result');
-    }, 1500);
+  // Pick from gallery  
+  const pickFromGallery = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed for gallery');
+      return;
+    }
+
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 1,
+      base64: true,
+    });
+
+    if (!result.canceled) {
+      setImage(result.assets[0].uri);
+      setStep(2);
+    }
   };
 
-  const handleRetake = () => {
-    setStep('camera');
-    setDetectedText('');
-    setTranslatedText('');
+  // FIXED OCR using Google Vision API
+  const performOCR = async () => {
+    if (!image) return;
+
+    try {
+      setLoading(true);
+      setExtractedText('');
+
+      // Get base64 from image picker result (already stored)
+      const imgSource = Image.resolveAssetSource({ uri: image });
+      const base64 = imgSource.uri.split(',')[1]; // Extract base64 data
+
+      const response = await fetch(
+        `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_KEY}`,
+        {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            requests: [{
+              image: { content: base64 },
+              features: [{ type: 'TEXT_DETECTION', maxResults: 10 }]
+            }]
+          }),
+        }
+      );
+
+      const result = await response.json();
+      
+      if (result.responses && result.responses[0].fullTextAnnotation) {
+        const text = result.responses[0].fullTextAnnotation.text;
+        setExtractedText(text || 'No text found');
+        setStep(3);
+      } else {
+        setExtractedText('No text detected. Try clearer image.');
+      }
+    } catch (error) {
+      console.log('OCR Error:', error);
+      setExtractedText('Error: Check API key or internet');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const reset = () => {
+    setImage(null);
+    setExtractedText('');
+    setStep(1);
   };
 
   return (
     <ScrollView style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Image Translator</Text>
         <Text style={styles.subtitle}>
-          Capture text from photos and translate instantly
+          {step === 1 && '📸 Pick or take image'}
+          {step === 2 && '✨ Ready to extract text'}
+          {step === 3 && '✅ Text extracted!'}
         </Text>
       </View>
 
-      {/* Step 1: Camera */}
-      {step === 'camera' && (
-        <View style={styles.cameraStep}>
-          <View style={styles.cameraPreview}>
-            <Ionicons name="camera-outline" size={80} color="#666" />
-            <Text style={styles.cameraText}>Tap to capture image</Text>
+      {/* Step 1: Pick */}
+      {step === 1 && (
+        <View style={styles.pickContainer}>
+          <View style={styles.pickCard}>
+            <Ionicons name="text-outline" size={80} color="#ff7a45" />
+            <Text style={styles.pickTitle}>Scan any text</Text>
+            <Text style={styles.pickDesc}>Menus, signs, documents</Text>
+            
+            <TouchableOpacity style={styles.bigButton} onPress={pickFromCamera}>
+              <Ionicons name="camera" size={28} color="#fff" />
+              <Text style={styles.bigButtonText}>Camera</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.bigButton} onPress={pickFromGallery}>
+              <Ionicons name="image" size={28} color="#fff" />
+              <Text style={styles.bigButtonText}>Gallery</Text>
+            </TouchableOpacity>
           </View>
-          
-          <TouchableOpacity style={styles.captureButton} onPress={handleCapture}>
-            <Ionicons name="radio-button-on" size={60} color="#ff7a45" />
-            <Text style={styles.captureLabel}>Capture</Text>
-          </TouchableOpacity>
+        </View>
+      )}
 
-          <TouchableOpacity style={styles.galleryButton}>
-            <Ionicons name="image-outline" size={24} color="#ffffff" />
-            <Text style={styles.galleryText}>Gallery</Text>
+      {/* Step 2: Preview + OCR */}
+      {step === 2 && image && (
+        <View style={styles.previewContainer}>
+          <Image source={{ uri: image }} style={styles.imagePreview} />
+          <Text style={styles.previewText}>Tap to extract text</Text>
+          
+          <TouchableOpacity 
+            style={[styles.ocrButton, loading && styles.disabled]}
+            onPress={performOCR}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="text" size={24} color="#fff" />
+                <Text style={styles.ocrButtonText}>EXTRACT TEXT</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
       )}
 
-      {/* Step 2: Processing */}
-      {step === 'processing' && (
-        <View style={styles.processingStep}>
-          <Image
-            source={{ uri: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=300' }}
-            style={styles.capturedImage}
-          />
+      {/* Step 3: Results */}
+      {step === 3 && image && (
+        <View style={styles.resultContainer}>
+          <Image source={{ uri: image }} style={styles.resultImage} />
           
-          <View style={styles.processingIndicator}>
-            <Ionicons name="hourglass" size={32} color="#ff7a45" />
-            <Text style={styles.processingText}>Detecting text...</Text>
-            <Text style={styles.detectedText}>{detectedText}</Text>
+          <View style={styles.textContainer}>
+            <Text style={styles.resultTitle}>Extracted Text:</Text>
+            <Text style={styles.extractedText}>{extractedText}</Text>
           </View>
-
-          <TouchableOpacity style={styles.nextButton} onPress={handleProcess}>
-            <Text style={styles.nextButtonText}>Translate</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Step 3: Result */}
-      {step === 'result' && (
-        <View style={styles.resultStep}>
-          <Image
-            source={{ uri: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=300' }}
-            style={styles.capturedImage}
-          />
-
-          <View style={styles.translationCard}>
-            <Text style={styles.detectedTitle}>Detected Text</Text>
-            <Text style={styles.detectedText}>{detectedText}</Text>
-
-            <LanguagePicker
-              selectedLang={toLang}
-              onLangChange={setToLang}
-              label="Translate to:"
-            />
-
-            <Text style={styles.translatedTitle}>Translation</Text>
-            <Text style={styles.translatedText}>{translatedText}</Text>
-          </View>
-
-          <View style={styles.actionRow}>
-            <TouchableOpacity style={styles.secondaryButton} onPress={handleRetake}>
-              <Text style={styles.secondaryButtonText}>Retake</Text>
+          
+          <View style={styles.buttonsRow}>
+            <TouchableOpacity style={styles.actionButton} onPress={() => {
+              Alert.alert('Copied!', 'Text copied to clipboard');
+            }}>
+              <Ionicons name="copy" size={20} color="#fff" />
+              <Text style={styles.actionText}>Copy</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.primaryButton}>
-              <Text style={styles.primaryButtonText}>Copy</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.primaryButton}>
-              <Text style={styles.primaryButtonText}>Share</Text>
+            <TouchableOpacity style={styles.actionButton} onPress={reset}>
+              <Ionicons name="refresh" size={20} color="#fff" />
+              <Text style={styles.actionText}>New Scan</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -182,200 +202,147 @@ export default function ImageTranslatorScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#050b18',
+  container: { flex: 1, backgroundColor: '#050b18' },
+  header: { 
+    padding: 24, 
+    paddingTop: 60, 
+    alignItems: 'center' 
   },
-  header: {
-    padding: 20,
-    paddingTop: 60,
+  title: { 
+    color: '#fff', 
+    fontSize: 32, 
+    fontWeight: '800' 
   },
-  title: {
-    color: '#ffffff',
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  subtitle: {
-    color: '#b0b4c3',
-    fontSize: 13,
-    marginTop: 6,
-  },
-
-  // Camera step
-  cameraStep: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  cameraPreview: {
-    backgroundColor: '#161b2b',
-    width: 280,
-    height: 400,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 40,
-  },
-  cameraText: {
-    color: '#b0b4c3',
-    fontSize: 16,
-    marginTop: 12,
-  },
-  captureButton: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  captureLabel: {
-    color: '#ff7a45',
-    fontSize: 16,
-    fontWeight: '600',
+  subtitle: { 
+    color: '#b0b4c3', 
+    fontSize: 16, 
     marginTop: 8,
-  },
-  galleryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1f2740',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 20,
-  },
-  galleryText: {
-    color: '#ffffff',
-    fontSize: 14,
-    marginLeft: 8,
+    textAlign: 'center'
   },
 
-  // Processing step
-  processingStep: {
+  pickContainer: {
     flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  capturedImage: {
-    width: 300,
-    height: 200,
-    borderRadius: 20,
-    marginTop: 20,
-    marginBottom: 30,
-  },
-  processingIndicator: {
-    backgroundColor: '#161b2b',
     padding: 24,
-    borderRadius: 20,
-    alignItems: 'center',
   },
-  processingText: {
-    color: '#ffffff',
-    fontSize: 16,
-    marginTop: 12,
+  pickCard: {
+    backgroundColor: '#161b2b',
+    borderRadius: 28,
+    padding: 48,
+    alignItems: 'center',
+    width: '100%',
+  },
+  pickTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: '800',
+    marginTop: 24,
     marginBottom: 8,
   },
-  detectedText: {
-    color: '#ff7a45',
+  pickDesc: {
+    color: '#b0b4c3',
+    fontSize: 16,
+    marginBottom: 32,
+  },
+  bigButton: {
+    flexDirection: 'row',
+    backgroundColor: '#ff7a45',
+    paddingHorizontal: 32,
+    paddingVertical: 20,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginBottom: 16,
+    width: '100%',
+  },
+  bigButtonText: {
+    color: '#fff',
     fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: '700',
+    marginLeft: 16,
   },
 
-  // Result step
-  resultStep: {
+  previewContainer: {
     flex: 1,
-    paddingHorizontal: 20,
+    alignItems: 'center',
+    padding: 24,
   },
-  translationCard: {
-    backgroundColor: '#161b2b',
-    borderRadius: 20,
-    padding: 20,
+  imagePreview: {
+    width: 320,
+    height: 320,
+    borderRadius: 24,
     marginBottom: 24,
   },
-  detectedTitle: {
-    color: '#b0b4c3',
-    fontSize: 14,
-    marginBottom: 4,
+  previewText: {
+    color: '#fff',
+    fontSize: 18,
+    marginBottom: 32,
   },
-  detectedText: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '600',
-    marginBottom: 20,
+  ocrButton: {
+    flexDirection: 'row',
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 40,
+    paddingVertical: 20,
+    borderRadius: 24,
+    alignItems: 'center',
   },
-  translatedTitle: {
-    color: '#b0b4c3',
-    fontSize: 14,
-    marginTop: 20,
-    marginBottom: 4,
+  ocrButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '800',
+    marginLeft: 12,
   },
-  translatedText: {
-    color: '#ff7a45',
-    fontSize: 20,
-    fontWeight: '600',
+  disabled: {
+    backgroundColor: '#666',
   },
 
-  langPicker: {
-    marginTop: 20,
+  resultContainer: {
+    flex: 1,
+    padding: 24,
   },
-  pickerLabel: {
-    color: '#ffffff',
-    fontSize: 14,
+  resultImage: {
+    width: '100%',
+    height: 280,
+    borderRadius: 24,
+    marginBottom: 24,
+  },
+  textContainer: {
+    backgroundColor: '#161b2b',
+    borderRadius: 20,
+    padding: 24,
+    marginBottom: 24,
+    minHeight: 140,
+  },
+  resultTitle: {
+    color: '#ff7a45',
+    fontSize: 18,
+    fontWeight: '700',
     marginBottom: 12,
   },
-  langRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  langButton: {
-    backgroundColor: '#1f2740',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-  },
-  langButtonActive: {
-    backgroundColor: '#ff7a45',
-  },
-  langText: {
-    color: '#d0d3e0',
-    fontSize: 13,
-  },
-  langTextActive: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  primaryButton: {
-    backgroundColor: '#ff7a45',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 16,
-  },
-  primaryButtonText: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  secondaryButton: {
-    backgroundColor: '#1f2740',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 16,
-  },
-  secondaryButtonText: {
-    color: '#ffffff',
-  },
-  nextButton: {
-    backgroundColor: '#ff7a45',
-    paddingHorizontal: 40,
-    paddingVertical: 14,
-    borderRadius: 20,
-    marginTop: 20,
-  },
-  nextButtonText: {
-    color: '#ffffff',
-    fontWeight: '600',
+  extractedText: {
+    color: '#fff',
     fontSize: 16,
+    lineHeight: 26,
+    fontFamily: 'monospace',
+  },
+  buttonsRow: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 24,
+    paddingVertical: 18,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    marginLeft: 12,
   },
 });

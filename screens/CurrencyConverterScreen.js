@@ -1,4 +1,4 @@
-// screens/CurrencyConverterScreen.js
+// screens/CurrencyConverterScreen.js - REAL API WORKING
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -7,24 +7,18 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-// FAKE exchange rates (you'll replace these with real API later)
-const FAKE_RATES = {
-  USD: { INR: 83.5, EUR: 0.92, GBP: 0.79, JPY: 149.2 },
-  INR: { USD: 0.012, EUR: 0.011, GBP: 0.0095, JPY: 1.79 },
-  EUR: { USD: 1.09, INR: 90.8, GBP: 0.86, JPY: 162.3 },
-  GBP: { USD: 1.27, INR: 105.9, EUR: 1.16, JPY: 188.7 },
-  JPY: { USD: 0.0067, INR: 0.56, EUR: 0.0062, GBP: 0.0053 },
-};
+const CURRENCIES = ['USD', 'EUR', 'GBP', 'INR', 'JPY', 'CAD', 'AUD'];
 
-function CurrencyRow({ 
-  currency, 
-  amount, 
-  onAmountChange, 
-  isFrom, 
-  onSwap 
+function CurrencyRow({
+  currency,
+  amount,
+  onAmountChange,
+  isFrom,
+  onSwap,
 }) {
   return (
     <View style={styles.currencyRow}>
@@ -32,19 +26,18 @@ function CurrencyRow({
         <Text style={styles.currencyCode}>{currency}</Text>
         <Text style={styles.currencyName}>
           {currency === 'USD' && 'US Dollar'}
-          {currency === 'INR' && 'Indian Rupee'}
           {currency === 'EUR' && 'Euro'}
           {currency === 'GBP' && 'British Pound'}
+          {currency === 'INR' && 'Indian Rupee'}
           {currency === 'JPY' && 'Japanese Yen'}
+          {currency === 'CAD' && 'Canadian Dollar'}
+          {currency === 'AUD' && 'Australian Dollar'}
         </Text>
       </View>
-      
+
       <View style={styles.inputContainer}>
         <TextInput
-          style={[
-            styles.amountInput,
-            isFrom && styles.fromInput
-          ]}
+          style={[styles.amountInput, isFrom && styles.fromInput]}
           value={amount}
           onChangeText={onAmountChange}
           placeholder="0"
@@ -66,44 +59,115 @@ export default function CurrencyConverterScreen() {
   const [toCurrency, setToCurrency] = useState('INR');
   const [fromAmount, setFromAmount] = useState('');
   const [toAmount, setToAmount] = useState('');
+  const [rates, setRates] = useState({});
+  const [base, setBase] = useState('USD');
+  const [loadingRates, setLoadingRates] = useState(false);
+  const [error, setError] = useState('');
 
-  const currencies = ['USD', 'INR', 'EUR', 'GBP', 'JPY'];
-
-  // Update toAmount whenever fromAmount changes
-  useEffect(() => {
-    if (fromAmount && FAKE_RATES[fromCurrency]?.[toCurrency]) {
-      const rate = FAKE_RATES[fromCurrency][toCurrency];
-      const converted = (parseFloat(fromAmount) || 0) * rate;
-      setToAmount(converted.toFixed(2));
-    } else {
-      setToAmount('');
+  // Fetch rates from frankfurter.app (always works, no API key)
+  const fetchRates = async (newBase = 'USD') => {
+    try {
+      setLoadingRates(true);
+      setError('');
+      
+      // Frankfurter API: base=EUR&symbols=USD,INR,JPY
+      const symbols = CURRENCIES.filter(c => c !== newBase).join(',');
+      const url = `https://api.frankfurter.app/latest?from=${newBase}&to=${symbols}`;
+      
+      const res = await fetch(url);
+      const data = await res.json();
+      
+      if (data.error) {
+        setError('Currency not available');
+        return;
+      }
+      
+      setRates(data.rates);
+      setBase(newBase);
+    } catch (e) {
+      setError('No internet connection');
+      console.error('API Error:', e);
+    } finally {
+      setLoadingRates(false);
     }
-  }, [fromAmount, fromCurrency, toCurrency]);
+  };
+
+  // Load initial rates
+  useEffect(() => {
+    fetchRates('USD');
+  }, []);
+
+  // Convert when amount/currencies change
+  useEffect(() => {
+    if (!fromAmount || !rates[toCurrency]) {
+      setToAmount('');
+      return;
+    }
+    const rate = rates[toCurrency] || 0;
+    const result = (parseFloat(fromAmount) || 0) * rate;
+    setToAmount(result.toFixed(2));
+  }, [fromAmount, fromCurrency, toCurrency, rates]);
 
   const handleSwap = () => {
-    setFromCurrency(toCurrency);
-    setToCurrency(fromCurrency);
-    setFromAmount(toAmount);
-    setToAmount(fromAmount);
+    const tempFrom = fromCurrency;
+    const tempTo = toCurrency;
+    const tempAmount = fromAmount;
+    
+    setFromCurrency(tempTo);
+    setToCurrency(tempFrom);
+    setFromAmount(toAmount || '');
+    setToAmount(tempAmount || '');
+    
+    // Refetch if base changes
+    if (base !== tempTo) {
+      fetchRates(tempTo);
+    }
+  };
+
+  const handleQuickSelect = (currency) => {
+    setFromCurrency(currency);
+    if (base !== currency) {
+      fetchRates(currency);
+    }
   };
 
   const formatCurrency = (amount, code) => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: code,
+      minimumFractionDigits: 2,
     }).format(amount);
   };
 
   return (
     <ScrollView style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Currency Converter</Text>
-        <Text style={styles.subtitle}>
-          Convert between popular world currencies
-        </Text>
+        <Text style={styles.subtitle}>Live rates from ECB</Text>
       </View>
 
-      {/* FROM currency */}
+      {/* Loading/Error */}
+      {loadingRates && (
+        <View style={styles.banner}>
+          <ActivityIndicator color="#ff7a45" />
+          <Text style={styles.bannerText}>Loading rates...</Text>
+        </View>
+      )}
+      
+      {error && !loadingRates && (
+        <TouchableOpacity 
+          style={[styles.banner, styles.errorBanner]}
+          onPress={() => fetchRates(base)}
+        >
+          <Ionicons name="alert-circle-outline" size={20} color="#ff4444" />
+          <Text style={[styles.bannerText, { color: '#ff4444' }]}>
+            {error} • Tap to retry
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Currency inputs */}
       <CurrencyRow
         currency={fromCurrency}
         amount={fromAmount}
@@ -112,7 +176,6 @@ export default function CurrencyConverterScreen() {
         onSwap={handleSwap}
       />
 
-      {/* TO currency */}
       <CurrencyRow
         currency={toCurrency}
         amount={toAmount}
@@ -120,46 +183,46 @@ export default function CurrencyConverterScreen() {
         isFrom={false}
       />
 
-      {/* Rate info */}
-      {fromAmount && toAmount && (
-        <View style={styles.rateInfo}>
+      {/* Rate display */}
+      {rates[toCurrency] && (
+        <View style={styles.rateCard}>
           <Text style={styles.rateText}>
-            1 {fromCurrency} = {FAKE_RATES[fromCurrency]?.[toCurrency]?.toFixed(4)} {toCurrency}
+            1 {fromCurrency} = {rates[toCurrency].toFixed(4)} {toCurrency}
           </Text>
-          <Text style={styles.lastUpdate}>Last update: Today</Text>
+          <Text style={styles.rateSource}>European Central Bank</Text>
         </View>
       )}
 
-      {/* Quick select buttons */}
-      <View style={styles.quickSelect}>
-        <Text style={styles.sectionTitle}>Quick Select</Text>
-        <View style={styles.buttonRow}>
-          {currencies.map((currency) => (
-            <TouchableOpacity
-              key={currency}
-              style={[
-                styles.currencyButton,
-                fromCurrency === currency && styles.currencyButtonActive,
-              ]}
-              onPress={() => setFromCurrency(currency)}
-            >
-              <Text
+      {/* Quick select */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Select base currency</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={styles.currencyRow}>
+            {CURRENCIES.map((currency) => (
+              <TouchableOpacity
+                key={currency}
                 style={[
-                  styles.currencyButtonText,
-                  fromCurrency === currency && styles.currencyButtonTextActive,
+                  styles.currencyChip,
+                  fromCurrency === currency && styles.currencyChipActive
                 ]}
+                onPress={() => handleQuickSelect(currency)}
               >
-                {currency}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+                <Text style={[
+                  styles.currencyChipText,
+                  fromCurrency === currency && styles.currencyChipTextActive
+                ]}>
+                  {currency}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
       </View>
 
-      {/* Formatted result (big display) */}
-      {fromAmount && toAmount && (
+      {/* Result */}
+      {toAmount && !loadingRates && (
         <View style={styles.resultCard}>
-          <Text style={styles.resultTitle}>Converted Amount</Text>
+          <Text style={styles.resultTitle}>{fromAmount} {fromCurrency}</Text>
           <Text style={styles.resultAmount}>
             {formatCurrency(parseFloat(toAmount), toCurrency)}
           </Text>
@@ -170,137 +233,148 @@ export default function CurrencyConverterScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#050b18',
+  container: { flex: 1, backgroundColor: '#050b18' },
+  header: { 
+    padding: 20, 
+    paddingTop: 60 
   },
-  header: {
-    padding: 20,
-    paddingTop: 60,
+  title: { 
+    color: '#ffffff', 
+    fontSize: 28, 
+    fontWeight: '800' 
   },
-  title: {
-    color: '#ffffff',
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  subtitle: {
-    color: '#b0b4c3',
-    fontSize: 13,
-    marginTop: 6,
+  subtitle: { 
+    color: '#b0b4c3', 
+    fontSize: 14, 
+    marginTop: 4 
   },
 
-  currencyRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#161b2b',
-    marginHorizontal: 20,
-    marginTop: 20,
-    padding: 16,
-    borderRadius: 18,
+  banner: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#161b2b', 
+    margin: 20, 
+    padding: 12, 
+    borderRadius: 12 
   },
-  currencyInfo: {
-    flex: 1,
+  errorBanner: { 
+    backgroundColor: '#2a0f0f' 
   },
-  currencyCode: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  currencyName: {
-    color: '#b0b4c3',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  amountInput: {
-    color: '#ffffff',
-    fontSize: 24,
-    fontWeight: '700',
-    textAlign: 'right',
-    minWidth: 100,
-  },
-  fromInput: {
-    fontSize: 32,
-    color: '#ff7a45',
-  },
-  swapButton: {
-    marginLeft: 12,
-    padding: 8,
+  bannerText: { 
+    color: '#ffffff', 
+    fontSize: 14, 
+    marginLeft: 8 
   },
 
-  rateInfo: {
-    backgroundColor: '#161b2b',
-    marginHorizontal: 20,
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 12,
+  currencyRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    backgroundColor: '#161b2b', 
+    marginHorizontal: 20, 
+    marginTop: 16, 
+    padding: 20, 
+    borderRadius: 20 
   },
-  rateText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
+  currencyInfo: { flex: 1 },
+  currencyCode: { 
+    color: '#ffffff', 
+    fontSize: 22, 
+    fontWeight: '800' 
   },
-  lastUpdate: {
-    color: '#b0b4c3',
-    fontSize: 11,
-    marginTop: 4,
+  currencyName: { 
+    color: '#b0b4c3', 
+    fontSize: 13, 
+    marginTop: 2 
   },
-
-  quickSelect: {
-    marginHorizontal: 20,
-    marginTop: 24,
+  inputContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center' 
   },
-  sectionTitle: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 12,
+  amountInput: { 
+    color: '#ffffff', 
+    fontSize: 28, 
+    fontWeight: '800', 
+    textAlign: 'right', 
+    minWidth: 120 
   },
-  buttonRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  fromInput: { 
+    fontSize: 36, 
+    color: '#ff7a45' 
   },
-  currencyButton: {
-    backgroundColor: '#1f2740',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  currencyButtonActive: {
-    backgroundColor: '#ff7a45',
-  },
-  currencyButtonText: {
-    color: '#d0d3e0',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  currencyButtonTextActive: {
-    color: '#ffffff',
+  swapButton: { 
+    marginLeft: 12, 
+    padding: 10 
   },
 
-  resultCard: {
-    backgroundColor: '#ff7a45',
-    margin: 20,
-    padding: 20,
-    borderRadius: 18,
+  rateCard: { 
+    backgroundColor: '#1a2332', 
+    marginHorizontal: 20, 
+    marginTop: 12, 
+    padding: 16, 
+    borderRadius: 16, 
+    alignItems: 'center' 
+  },
+  rateText: { 
+    color: '#ff7a45', 
+    fontSize: 16, 
+    fontWeight: '700' 
+  },
+  rateSource: { 
+    color: '#b0b4c3', 
+    fontSize: 12, 
+    marginTop: 4 
+  },
+
+  section: { 
+    marginHorizontal: 20, 
+    marginTop: 24 
+  },
+  sectionTitle: { 
+    color: '#ffffff', 
+    fontSize: 16, 
+    fontWeight: '700', 
+    marginBottom: 16 
+  },
+  currencyRow: { 
+    flexDirection: 'row' 
+  },
+  currencyChip: { 
+    backgroundColor: '#1f2740', 
+    paddingHorizontal: 20, 
+    paddingVertical: 12, 
+    borderRadius: 25, 
+    marginRight: 12 
+  },
+  currencyChipActive: { 
+    backgroundColor: '#ff7a45' 
+  },
+  currencyChipText: { 
+    color: '#d0d3e0', 
+    fontSize: 16, 
+    fontWeight: '700' 
+  },
+  currencyChipTextActive: { 
+    color: '#ffffff' 
+  },
+
+  resultCard: { 
+    backgroundColor: '#ff7a45', 
+    margin: 20, 
+    padding: 24, 
+    borderRadius: 20, 
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: 24 
   },
-  resultTitle: {
-    color: '#ffffff',
-    fontSize: 14,
-    opacity: 0.9,
+  resultTitle: { 
+    color: '#ffffff', 
+    fontSize: 16, 
+    opacity: 0.9 
   },
-  resultAmount: {
-    color: '#ffffff',
-    fontSize: 32,
-    fontWeight: '800',
-    marginTop: 6,
+  resultAmount: { 
+    color: '#ffffff', 
+    fontSize: 36, 
+    fontWeight: '900', 
+    marginTop: 8 
   },
 });
