@@ -1,4 +1,4 @@
-// screens/ImageTranslatorScreen.js - FIXED with Google Vision OCR
+// screens/ImageTranslatorScreen.js - Google Vision OCR
 import React, { useState } from 'react';
 import {
   View,
@@ -9,18 +9,56 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import { Ionicons } from '@expo/vector-icons';
 
 // REPLACE WITH YOUR GOOGLE VISION API KEY
-const GOOGLE_VISION_KEY = 'AIzaSyAzarJuuFzjtw8Y6OnOYRbd1s4pX2wIOa4E';
+const GOOGLE_VISION_KEY = 'AIzaSyAzarJuuFzjtw8Y6OnOYRbd1s4pX2wIOa4';
+
+// Helper: convert image URI to base64 using expo-file-system
+const uriToBase64 = async (uri) => {
+  const base64 = await FileSystem.readAsStringAsync(uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  return base64;
+};
 
 export default function ImageTranslatorScreen() {
   const [image, setImage] = useState(null);
+  const [imageBase64, setImageBase64] = useState(null);
   const [extractedText, setExtractedText] = useState('');
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
+
+  // Handle image result from either picker
+  const handleImageResult = async (result) => {
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const asset = result.assets[0];
+      setImage(asset.uri);
+
+      // Try to get base64 from picker, fallback to FileSystem conversion
+      let base64Data = asset.base64;
+      if (!base64Data) {
+        console.log('base64 not returned by picker, converting via FileSystem...');
+        try {
+          base64Data = await uriToBase64(asset.uri);
+        } catch (err) {
+          console.log('FileSystem base64 conversion failed:', err);
+        }
+      }
+
+      if (base64Data) {
+        console.log('Base64 captured, length:', base64Data.length);
+        setImageBase64(base64Data);
+        setStep(2);
+      } else {
+        Alert.alert('Error', 'Could not read image data. Please try again.');
+      }
+    }
+  };
 
   // Pick from camera
   const pickFromCamera = async () => {
@@ -31,17 +69,14 @@ export default function ImageTranslatorScreen() {
     }
 
     let result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 1,
+      quality: 0.8,
       base64: true,
     });
 
-    if (!result.canceled) {
-      setImage(result.assets[0].uri);
-      setStep(2);
-    }
+    await handleImageResult(result);
   };
 
   // Pick from gallery  
@@ -53,30 +88,38 @@ export default function ImageTranslatorScreen() {
     }
 
     let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 1,
+      quality: 0.8,
       base64: true,
     });
 
-    if (!result.canceled) {
-      setImage(result.assets[0].uri);
-      setStep(2);
-    }
+    await handleImageResult(result);
   };
 
-  // FIXED OCR using Google Vision API
+  // OCR using Google Vision API
   const performOCR = async () => {
     if (!image) return;
+
+    // If base64 is missing, try to re-read from file
+    let base64 = imageBase64;
+    if (!base64) {
+      try {
+        base64 = await uriToBase64(image);
+        setImageBase64(base64);
+      } catch (err) {
+        console.log('Failed to read base64:', err);
+        setExtractedText('Error: Could not read image data.');
+        return;
+      }
+    }
 
     try {
       setLoading(true);
       setExtractedText('');
 
-      // Get base64 from image picker result (already stored)
-      const imgSource = Image.resolveAssetSource({ uri: image });
-      const base64 = imgSource.uri.split(',')[1]; // Extract base64 data
+      console.log('Sending to Vision API, base64 length:', base64.length);
 
       const response = await fetch(
         `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_KEY}`,
@@ -96,17 +139,37 @@ export default function ImageTranslatorScreen() {
       );
 
       const result = await response.json();
+      console.log('Vision API status:', response.status);
+
+      // Check for API-level errors (invalid key, quota, etc.)
+      if (result.error) {
+        console.log('Vision API error:', JSON.stringify(result.error));
+        setExtractedText(`API Error: ${result.error.message || 'Unknown error'}`);
+        return;
+      }
       
-      if (result.responses && result.responses[0].fullTextAnnotation) {
-        const text = result.responses[0].fullTextAnnotation.text;
-        setExtractedText(text || 'No text found');
-        setStep(3);
+      if (result.responses && result.responses[0]) {
+        // Check for per-request errors
+        if (result.responses[0].error) {
+          console.log('Vision request error:', JSON.stringify(result.responses[0].error));
+          setExtractedText(`API Error: ${result.responses[0].error.message || 'Request failed'}`);
+          return;
+        }
+
+        if (result.responses[0].fullTextAnnotation) {
+          const text = result.responses[0].fullTextAnnotation.text;
+          setExtractedText(text || 'No text found');
+          setStep(3);
+        } else {
+          setExtractedText('No text detected in image. Try a clearer image with visible text.');
+        }
       } else {
-        setExtractedText('No text detected. Try clearer image.');
+        console.log('Unexpected API response:', JSON.stringify(result));
+        setExtractedText('Unexpected response from API. Check console for details.');
       }
     } catch (error) {
-      console.log('OCR Error:', error);
-      setExtractedText('Error: Check API key or internet');
+      console.log('OCR Error:', error.message || error);
+      setExtractedText(`Network Error: ${error.message || 'Check your internet connection'}`);
     } finally {
       setLoading(false);
     }
@@ -114,6 +177,7 @@ export default function ImageTranslatorScreen() {
 
   const reset = () => {
     setImage(null);
+    setImageBase64(null);
     setExtractedText('');
     setStep(1);
   };
