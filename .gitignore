@@ -35,6 +35,9 @@ yarn-error.*
 .env*.local
 backend/.env
 
+# AI Chat CLI config
+.aichat/
+
 # typescript
 *.tsbuildinfo
 
