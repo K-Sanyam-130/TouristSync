@@ -122,7 +122,7 @@ FORMATTING:
 
 // ─── API Configuration ──────────────────────────────────────
 const OPENROUTER_API_KEY = process.env.EXPO_PUBLIC_OPENROUTER_API_KEY;
-const OPENROUTER_MODEL = 'openai/gpt-oss-120b:free';
+const OPENROUTER_MODEL = 'google/gemini-2.5-flash:free';
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 // Gemini fallback (kept in case OpenRouter is down)
