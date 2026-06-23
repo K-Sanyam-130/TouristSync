@@ -370,7 +370,7 @@ export default function AIChatScreen() {
         )}
 
           {/* ── INPUT BAR ──────────────────────────────────── */}
-          <View style={[styles.inputBar, { borderTopColor: theme.colors.borderSilver, paddingBottom: Platform.OS === 'ios' ? Math.max(insets.bottom, 20) : insets.bottom + 24 }]}>
+          <View style={[styles.inputBar, { borderTopColor: theme.colors.borderSilver, paddingBottom: Platform.OS === 'ios' ? Math.max(insets.bottom, 20) + 93 : 93 + 12 }]}>
           <View style={[styles.inputWrapper, { backgroundColor: theme.colors.glassBg, borderColor: theme.colors.borderGold }]}>
             <TextInput
               ref={inputRef}

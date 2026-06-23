@@ -17,6 +17,7 @@ import WeatherScreen from './screens/WeatherScreen';
 import EmergencyScreen from './screens/EmergencyScreen';
 import VoiceTranslatorScreen from './screens/VoiceTranslatorScreen';
 import SmartNavigationScreen from './screens/SmartNavigationScreen';
+import AIChatScreen from './screens/AIChatScreen';
 
 import LoginScreen from './screens/LoginScreen';
 import SignUpScreen from './screens/SignUpScreen';
@@ -33,8 +34,9 @@ import ChatScreen from './screens/ChatScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
 import DiscoverScreen from './screens/DiscoverScreen';
 import SavedPostsScreen from './screens/SavedPostsScreen';
-import AIChatScreen from './screens/AIChatScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import CreateAlbumScreen from './screens/CreateAlbumScreen';
+import RankingsScreen from './screens/RankingsScreen';
 
 import SplashScreen from './screens/SplashScreen';
 
@@ -67,6 +69,7 @@ function HomeStack() {
       <HomeStackNav.Screen name="CurrencyConverter" component={CurrencyConverterScreen} />
       <HomeStackNav.Screen name="Weather" component={WeatherScreen} />
       <HomeStackNav.Screen name="Emergency" component={EmergencyScreen} />
+      <HomeStackNav.Screen name="AIChat" component={AIChatScreen} />
     </HomeStackNav.Navigator>
   );
 }
@@ -226,8 +229,9 @@ function AppContent() {
               <Stack.Screen name="Notifications" component={NotificationsScreen} />
               <Stack.Screen name="Discover" component={DiscoverScreen} />
               <Stack.Screen name="SavedPosts" component={SavedPostsScreen} />
-              <Stack.Screen name="AIChat" component={AIChatScreen} />
               <Stack.Screen name="Settings" component={SettingsScreen} />
+              <Stack.Screen name="CreateAlbum" component={CreateAlbumScreen} />
+              <Stack.Screen name="Rankings" component={RankingsScreen} />
             </>
           ) : (
             <>

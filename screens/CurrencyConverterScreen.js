@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../constants/ThemeContext';
 
 import GlassCard from '../components/ui/GlassCard';
@@ -62,6 +63,7 @@ function CurrencyRow({
 
 export default function CurrencyConverterScreen() {
   const { theme } = useTheme();
+  const navigation = useNavigation();
 
   const [fromCurrency, setFromCurrency] = useState('USD');
   const [toCurrency, setToCurrency] = useState('INR');
@@ -153,7 +155,15 @@ export default function CurrencyConverterScreen() {
 
       {/* Header */}
       <View style={[styles.header, { backgroundColor: theme.colors.midnight }]}>
-        <StaggerRevealText text="Currency Converter" style={[theme.typography.displayS, { color: theme.colors.gold }]} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', justifyContent: 'center', alignItems: 'center' }}
+          >
+            <Ionicons name="chevron-back" size={22} color={theme.colors.gold} />
+          </TouchableOpacity>
+          <StaggerRevealText text="Currency Converter" style={[theme.typography.displayS, { color: theme.colors.gold }]} />
+        </View>
         <Text style={[theme.typography.caption, { color: theme.colors.parchment, marginTop: 4 }]}>Live rates from ECB</Text>
       </View>
 

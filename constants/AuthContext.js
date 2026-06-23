@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as authService from '../services/auth.service';
+import { registerLogoutCallback } from '../services/api';
 
 const AuthContext = createContext({
   user: null,
@@ -19,31 +20,29 @@ export const AuthProvider = ({ children }) => {
   const [userProfile, setUserProfile] = useState(null); // Same as user (kept for compat)
   const [loading, setLoading] = useState(true);
 
-  // On app start: check for existing token and rehydrate user
+  // Register logout callback for global 401s
   useEffect(() => {
-    const rehydrate = async () => {
+    registerLogoutCallback(() => {
+      setUser(null);
+      setUserProfile(null);
+    });
+  }, []);
+
+  // On app start: clear token to disable persistence (forces login on reload/restart)
+  useEffect(() => {
+    const clearSessionOnStart = async () => {
       try {
-        const token = await AsyncStorage.getItem('authToken');
-        if (token) {
-          const userData = await authService.getMe();
-          const enriched = { ...userData, uid: userData._id };
-          setUser(enriched);
-          setUserProfile(buildProfile(enriched));
-        }
+        await AsyncStorage.removeItem('authToken');
       } catch (error) {
-        // Only clear the token if it's explicitly rejected as invalid/expired (401)
-        console.log('[Auth] Rehydration failed:', error.message);
-        if (error.response?.status === 401) {
-          await AsyncStorage.removeItem('authToken');
-          setUser(null);
-          setUserProfile(null);
-        }
+        console.log('[Auth] Failed to clear token on start:', error.message);
       } finally {
+        setUser(null);
+        setUserProfile(null);
         setLoading(false);
       }
     };
 
-    rehydrate();
+    clearSessionOnStart();
   }, []);
 
   /**

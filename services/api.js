@@ -3,7 +3,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const api = axios.create({
-  baseURL: process.env.EXPO_PUBLIC_API_BASE_URL || 'http://10.160.113.31:5000/api',
+  baseURL: process.env.EXPO_PUBLIC_API_BASE_URL || 'http://10.232.252.31:5000/api',
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 });
@@ -25,6 +25,12 @@ api.interceptors.request.use(
 );
 
 // Response interceptor: handle 401 globally
+let logoutCallback = null;
+
+export const registerLogoutCallback = (cb) => {
+  logoutCallback = cb;
+};
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -33,7 +39,9 @@ api.interceptors.response.use(
       try {
         await AsyncStorage.removeItem('authToken');
       } catch (_) {}
-      // Navigation to login will be handled by AuthContext
+      if (logoutCallback) {
+        logoutCallback();
+      }
     }
     return Promise.reject(error);
   }

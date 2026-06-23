@@ -112,21 +112,28 @@ You are fully aware of the tools available within this app. If a user asks for s
 - Social: If they want to meet other travelers, suggest the "Community" screen.
 
 FORMATTING:
-- Use markdown tables for itineraries, comparisons, or packing lists.
-- Use bullet points for tips.
-- Use **bold** text to highlight app feature names and important info.
-- Keep responses structured and easy to read on a mobile screen.
+- NEVER use markdown tables. They render poorly on mobile screens.
+- Write responses in clear, flowing paragraphs that are easy to read on a phone.
+- Use **bold** text to highlight app feature names, place names, and important info.
+- Use short paragraphs (2-3 sentences each) separated by line breaks for readability.
+- For lists, use simple numbered lists or short bullet points — NOT tables.
+- Keep responses concise and conversational, like a knowledgeable friend giving advice.
 - Use emojis sparingly (1–2 per response) for visual appeal.`;
 
-// ─── Initialize Gemini ───────────────────────────────────────
+// ─── API Configuration ──────────────────────────────────────
+const OPENROUTER_API_KEY = process.env.EXPO_PUBLIC_OPENROUTER_API_KEY;
+const OPENROUTER_MODEL = 'openai/gpt-oss-120b:free';
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
+// Gemini fallback (kept in case OpenRouter is down)
 let genAI = null;
 let chatModel = null;
 
-function getModel() {
+function getGeminiModel() {
   if (!chatModel) {
     const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
     if (!apiKey || apiKey === 'your_gemini_api_key_here') {
-      throw new Error('Gemini API key is not configured. Add EXPO_PUBLIC_GEMINI_API_KEY to your .env file.');
+      return null;
     }
     genAI = new GoogleGenerativeAI(apiKey);
     chatModel = genAI.getGenerativeModel({
@@ -142,75 +149,145 @@ function getModel() {
   return chatModel;
 }
 
+// ─── OpenRouter AI call ─────────────────────────────────────
+async function callOpenRouter(prompt, conversationHistory = []) {
+  if (!OPENROUTER_API_KEY) {
+    throw new Error('NO_OPENROUTER_KEY');
+  }
+
+  // Build messages array
+  const messages = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    ...conversationHistory
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .slice(-8)
+      .map(m => ({ role: m.role, content: m.content })),
+    { role: 'user', content: prompt.trim() },
+  ];
+
+  const res = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://touristguide.app',
+      'X-Title': 'TouristGuide AI Assistant',
+    },
+    body: JSON.stringify({
+      model: OPENROUTER_MODEL,
+      messages,
+      max_tokens: 1024,
+      temperature: 0.7,
+    }),
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.text();
+    console.error(`[AI Service] OpenRouter HTTP ${res.status}: ${errorBody}`);
+    if (res.status === 401 || res.status === 403) {
+      throw new Error('OPENROUTER_AUTH_ERROR');
+    }
+    if (res.status === 429) {
+      throw new Error('RATE_LIMIT');
+    }
+    throw new Error(`OpenRouter error: HTTP ${res.status}`);
+  }
+
+  const json = await res.json();
+
+  if (json.error) {
+    console.error('[AI Service] OpenRouter response error:', json.error.message || JSON.stringify(json.error));
+    throw new Error(json.error.message || 'OpenRouter returned an error');
+  }
+
+  const text = json.choices?.[0]?.message?.content?.trim();
+  if (!text) {
+    throw new Error('Empty response from OpenRouter');
+  }
+
+  return text;
+}
+
+// ─── Gemini AI call (fallback) ──────────────────────────────
+async function callGemini(prompt, conversationHistory = []) {
+  const model = getGeminiModel();
+  if (!model) {
+    throw new Error('Gemini API key not configured');
+  }
+
+  const history = conversationHistory
+    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .slice(-8)
+    .map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+
+  const chat = model.startChat({ history });
+  const result = await chat.sendMessage(prompt.trim());
+  const text = result.response.text();
+
+  if (!text || text.trim().length === 0) {
+    throw new Error('Empty response from Gemini');
+  }
+
+  return text.trim();
+}
+
 /**
- * Send a chat message to the AI Assistant via Google Gemini API.
+ * Send a chat message to the AI Assistant.
+ * Primary: OpenRouter (free model). Fallback: Google Gemini.
  * @param {string} prompt - User's message
  * @param {Array} conversationHistory - Previous messages [{role, content}]
  * @returns {Promise<string>} AI response text
  */
 export async function askGeminiAI(prompt, conversationHistory = []) {
-  const MAX_RETRIES = 2;
-  let attempt = 0;
+  const MAX_RETRIES = 3;
+  const RETRY_BASE_DELAY = 1500;
 
-  while (attempt <= MAX_RETRIES) {
+  // ── Try OpenRouter first (primary) ──
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const model = getModel();
-
-      // Build history for Gemini (it expects 'user' and 'model' roles)
-      const history = conversationHistory
-        .filter(m => m.role === 'user' || m.role === 'assistant')
-        .slice(-8)
-        .map(m => ({
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: m.content }],
-        }));
-
-      // Start a chat session with history
-      const chat = model.startChat({ history });
-
-      // Send the user's message
-      const result = await chat.sendMessage(prompt.trim());
-      const response = result.response;
-      const text = response.text();
-
-      if (!text || text.trim().length === 0) {
-        throw new Error('Empty response from AI.');
-      }
-
-      return text.trim();
+      console.log(`[AI Service] OpenRouter attempt ${attempt}/${MAX_RETRIES}`);
+      const result = await callOpenRouter(prompt, conversationHistory);
+      console.log(`[AI Service] OpenRouter success on attempt ${attempt}`);
+      return result;
     } catch (error) {
-      attempt++;
-      console.error(`[Gemini AI] Error (attempt ${attempt}):`, error.message);
+      console.error(`[AI Service] OpenRouter error (attempt ${attempt}):`, error.message);
 
-      // Don't retry on auth errors or invalid key
-      if (error.message?.includes('API key') || error.message?.includes('403') || error.message?.includes('401')) {
-        throw new Error('Invalid Gemini API key. Please check your configuration.');
+      // Auth error → skip to Gemini fallback immediately
+      if (error.message === 'OPENROUTER_AUTH_ERROR' || error.message === 'NO_OPENROUTER_KEY') {
+        console.log('[AI Service] OpenRouter auth failed, trying Gemini fallback...');
+        break;
       }
 
-      // Rate limit — wait and retry
-      if (error.message?.includes('429') || error.message?.includes('Resource has been exhausted')) {
-        if (attempt <= MAX_RETRIES) {
-          const delay = Math.pow(2, attempt) * 1000; // 2s, 4s
-          console.log(`[Gemini AI] Rate limited. Waiting ${delay}ms...`);
-          await new Promise(r => setTimeout(r, delay));
-          continue;
-        }
-        throw new Error('Too many requests. Please wait a moment and try again.');
-      }
-
-      // Network errors — retry
-      if (error.message?.includes('fetch') || error.message?.includes('network') || error.message?.includes('ECONNREFUSED')) {
-        if (attempt <= MAX_RETRIES) {
-          await new Promise(r => setTimeout(r, 1500));
-          continue;
-        }
-        throw new Error('Network error. Check your internet connection.');
-      }
-
-      // Other errors — throw immediately
-      if (attempt > MAX_RETRIES) {
-        throw new Error(error.message || 'Could not reach AI service.');
+      // Rate limit or network error → retry with backoff
+      if (attempt < MAX_RETRIES) {
+        const delay = RETRY_BASE_DELAY * attempt;
+        console.log(`[AI Service] Retrying in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
       }
     }
   }
+
+  // ── Gemini fallback ──
+  try {
+    console.log('[AI Service] Trying Gemini fallback...');
+    const result = await callGemini(prompt, conversationHistory);
+    console.log('[AI Service] Gemini fallback success');
+    return result;
+  } catch (geminiError) {
+    console.error('[AI Service] Gemini fallback also failed:', geminiError.message);
+
+    // If both failed, throw a user-friendly error
+    if (geminiError.message?.includes('429') || geminiError.message?.includes('quota')) {
+      throw new Error('AI is temporarily busy. Please try again in a moment.');
+    }
+    if (geminiError.message?.includes('API key')) {
+      throw new Error('AI service configuration error. Please contact support.');
+    }
+    throw new Error('Could not reach AI service. Please check your internet connection and try again.');
+  }
 }
+

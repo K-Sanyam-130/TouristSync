@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "madApp",
-    "slug": "madApp",
-    "scheme": "madapp",
+    "name": "TouristSync",
+    "slug": "touristsync",
+    "scheme": "touristsync",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -14,20 +14,21 @@
       "backgroundColor": "#ffffff"
     },
     "plugins": [
+      "expo-font",
+      "expo-web-browser",
+      "expo-video",
       [
         "expo-speech-recognition",
         {
           "microphonePermission": "touristGuide needs your microphone to capture speech for translation.",
-          "speechRecognitionPermission": "touristGuide uses speech recognition to translate what you say."
+          "speechRecognitionPermission": "tourist Guide uses speech recognition to translate what you say."
         }
-      ],
-      "expo-font",
-      "expo-web-browser"
+      ]
     ],
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSSpeechRecognitionUsageDescription": "touristGuide uses speech recognition to translate what you say.",
+        "NSSpeechRecognitionUsageDescription": "tourist Guide uses speech recognition to translate what you say.",
         "NSMicrophoneUsageDescription": "touristGuide needs your microphone to capture speech for translation."
       }
     },
@@ -44,6 +45,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "9b800c13-0bdd-41f3-ba3c-d333a45ef2bc"
+      }
     }
   }
 }
