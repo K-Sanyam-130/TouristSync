@@ -1,5 +1,0 @@
-model: minimax/minimax-m2.5:free
-
-openai:
-  api_base: https://openrouter.ai/api/v1
-  api_key: OPENROUTER_API_KEY_PLACEHOLDER
