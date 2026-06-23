@@ -84,7 +84,7 @@ function formatNumberString(val) {
   return parts.join('.');
 }
 
-export default function CurrencyConverterScreen({ navigation }) {
+export default function CurrencyConverterScreen() {
   const { theme } = useTheme();
   const { width: screenWidth } = useWindowDimensions();
   const navigation = useNavigation();
