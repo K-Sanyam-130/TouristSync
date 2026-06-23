@@ -15,7 +15,7 @@ import styles from './styles/ImageTranslatorStyles';
 // API Keys
 const OCR_API_KEY = process.env.EXPO_PUBLIC_OCR_API_KEY;
 const OPENROUTER_API_KEY = process.env.EXPO_PUBLIC_OPENROUTER_API_KEY;
-const OPENROUTER_MODEL = 'google/gemini-2.5-flash:free';
+const OPENROUTER_MODEL = 'openai/gpt-4o-mini';
 
 // Retry config for translation API
 const MAX_RETRIES = 3;
