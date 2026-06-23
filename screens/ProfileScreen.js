@@ -14,6 +14,7 @@ import { useAuth } from '../constants/AuthContext';
 import { uploadMedia } from '../services/media.service';
 import { getMyAlbums } from '../services/album.service';
 import { getMyAchievements } from '../services/achievement.service';
+import { getFollowing } from '../services/follow.service';
 
 import GlassCard from '../components/ui/GlassCard';
 import StaggerRevealText from '../components/ui/StaggerRevealText';
@@ -43,6 +44,7 @@ export default function ProfileScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState('Posts');
   const [profileImage, setProfileImage] = useState(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [followingList, setFollowingList] = useState([]);
   
   // Gamification & Albums state
   const [albums, setAlbums] = useState([]);
@@ -57,17 +59,23 @@ export default function ProfileScreen({ navigation }) {
     }
   }, [userProfile]);
 
-  // Fetch albums and ranking when screen is focused
+  // Fetch albums, ranking, and following when screen is focused
   useFocusEffect(
     useCallback(() => {
       const fetchExtras = async () => {
+        if (!user) return;
         try {
-          const [albumsRes, rankRes] = await Promise.all([
+          const [albumsRes, rankRes, followingRes] = await Promise.all([
             getMyAlbums(1, 10),
-            getMyAchievements()
+            getMyAchievements(),
+            getFollowing(user.uid || user._id, 1, 50).catch(err => {
+              console.log('Error fetching following:', err);
+              return { data: [] };
+            })
           ]);
           setAlbums(albumsRes.data || []);
           setMyRank(rankRes.data || null);
+          setFollowingList(followingRes.data || []);
         } catch (e) {
           console.log('Error fetching profile extras:', e);
         } finally {
@@ -75,7 +83,7 @@ export default function ProfileScreen({ navigation }) {
         }
       };
       fetchExtras();
-    }, [])
+    }, [user])
   );
 
   const handlePickDP = async () => {
@@ -156,7 +164,7 @@ export default function ProfileScreen({ navigation }) {
             </Text>
 
             <View style={styles.actionButtonsRow}>
-              <TouchableOpacity style={styles.actionButton}>
+              <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Settings', { expandSection: 'account' })}>
                 <Text style={styles.actionButtonText}>Edit Profile</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Settings')}>
@@ -256,12 +264,78 @@ export default function ProfileScreen({ navigation }) {
             <TabButton label="Following" active={activeTab === 'Following'} onPress={() => setActiveTab('Following')} />
           </View>
           
-          <View style={{ padding: 20, alignItems: 'center', marginTop: 20 }}>
-              <Ionicons name={activeTab === 'Posts' ? "images-outline" : "people-outline"} size={48} color={theme.colors.parchment} style={{ marginBottom: 12, opacity: 0.5 }} />
+          {activeTab === 'Following' ? (
+            followingList.length > 0 ? (
+              <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>
+                {followingList.map((item) => {
+                  const initials = item.displayName ? item.displayName[0].toUpperCase() : '?';
+                  return (
+                    <TouchableOpacity
+                      key={item.uid || item._id}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingVertical: 12,
+                        paddingHorizontal: 16,
+                        borderRadius: 12,
+                        backgroundColor: theme.colors.midnight,
+                        borderWidth: 1,
+                        borderColor: 'rgba(255, 255, 255, 0.05)',
+                        marginBottom: 10,
+                      }}
+                      onPress={() => navigation.navigate('UserProfile', { userId: item.uid || item._id })}
+                      activeOpacity={0.7}
+                    >
+                      <View
+                        style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: 20,
+                          backgroundColor: theme.colors.copper + '22',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          marginRight: 12,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {item.avatarUrl ? (
+                          <Image source={{ uri: item.avatarUrl }} style={{ width: '100%', height: '100%' }} />
+                        ) : (
+                          <Text style={{ color: theme.colors.copper, fontSize: 16, fontWeight: 'bold' }}>
+                            {initials}
+                          </Text>
+                        )}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[theme.typography.body, { color: theme.colors.ivory, fontWeight: '600' }]}>
+                          {item.displayName || 'Traveler'}
+                        </Text>
+                        <Text style={[theme.typography.caption, { color: theme.colors.parchment, marginTop: 2 }]}>
+                          @{item.username || 'username'}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={theme.colors.parchment} style={{ opacity: 0.6 }} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={{ padding: 30, alignItems: 'center', marginTop: 20 }}>
+                <Ionicons name="people-outline" size={48} color={theme.colors.parchment} style={{ marginBottom: 12, opacity: 0.4 }} />
+                <Text style={[theme.typography.body, { color: theme.colors.parchment, textAlign: 'center' }]}>
+                  Not following anyone yet.
+                </Text>
+              </View>
+            )
+          ) : (
+            /* My Posts Tab Placeholder */
+            <View style={{ padding: 30, alignItems: 'center', marginTop: 20 }}>
+              <Ionicons name="images-outline" size={48} color={theme.colors.parchment} style={{ marginBottom: 12, opacity: 0.4 }} />
               <Text style={[theme.typography.body, { color: theme.colors.parchment }]}>
-                  {activeTab === 'Posts' ? 'No posts yet.' : 'Not following anyone yet.'}
+                No posts yet.
               </Text>
-          </View>
+            </View>
+          )}
 
           {/* Footer */}
           <Text style={[theme.typography.caption, styles.footer, { color: theme.colors.parchment }]}>

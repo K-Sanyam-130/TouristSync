@@ -10,12 +10,21 @@ import { useAuth } from '../constants/AuthContext';
 import GlassCard from '../components/ui/GlassCard';
 import PressableGoldButton from '../components/ui/PressableGoldButton';
 import FloatingParticles from '../components/ui/FloatingParticles';
-import styles from './styles/ProfileScreen.styles';
+import styles from './styles/SettingsScreen.styles';
 
 function SectionHeader({ icon, label, expanded, onToggle, danger }) {
   const { theme } = useTheme();
   return (
-    <GlassCard style={[styles.sectionCard, expanded && { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }]} onPress={onToggle} glowOnPress={false}>
+    <GlassCard
+      style={[
+        styles.sectionCard,
+        expanded
+          ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, marginBottom: 0 }
+          : { marginBottom: 12 },
+      ]}
+      onPress={onToggle}
+      glowOnPress={false}
+    >
       <View style={styles.row}>
         <View style={[styles.rowIcon, danger ? { backgroundColor: theme.colors.crimson + '22' } : { backgroundColor: theme.colors.copper + '22' }]}>
           <Ionicons name={icon} size={18} color={danger ? theme.colors.crimson : theme.colors.copper} />
@@ -34,7 +43,7 @@ function SectionHeader({ icon, label, expanded, onToggle, danger }) {
   );
 }
 
-export default function SettingsScreen({ navigation }) {
+export default function SettingsScreen({ navigation, route }) {
   const { theme } = useTheme();
   const { user, userProfile, updateUserProfile, logOut } = useAuth();
 
@@ -48,7 +57,14 @@ export default function SettingsScreen({ navigation }) {
   const [saving, setSaving] = useState(false);
 
   // Expanded sections
-  const [expandedSection, setExpandedSection] = useState(null);
+  const [expandedSection, setExpandedSection] = useState(route.params?.expandSection || null);
+
+  // Auto-expand sections from route params
+  useEffect(() => {
+    if (route.params?.expandSection) {
+      setExpandedSection(route.params.expandSection);
+    }
+  }, [route.params?.expandSection]);
 
   // Gender options
   const genderOptions = ['Male', 'Female', 'Other'];
@@ -115,7 +131,7 @@ export default function SettingsScreen({ navigation }) {
         >
           {/* Saved Posts */}
           <TouchableOpacity 
-            style={{ marginBottom: 8 }} 
+            style={{ marginBottom: 12 }} 
             onPress={() => navigation.navigate('SavedPosts')}
             activeOpacity={0.7}
           >
@@ -142,7 +158,7 @@ export default function SettingsScreen({ navigation }) {
           {expandedSection === 'account' && (
             <GlassCard style={[styles.expandedBox, { borderTopLeftRadius: 0, borderTopRightRadius: 0 }]} glowOnPress={false}>
               
-              <Text style={styles.fieldLabel}>Display Name</Text>
+              <Text style={[styles.fieldLabel, { marginTop: 0 }]}>Display Name</Text>
               <TextInput
                 style={[theme.typography.body, styles.fieldInput, { backgroundColor: theme.colors.midnight, color: theme.colors.ivory }]}
                 placeholder="Ex: Kevan Patira"

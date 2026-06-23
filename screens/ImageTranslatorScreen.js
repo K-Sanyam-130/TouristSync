@@ -5,7 +5,6 @@ import {
   Alert, ActivityIndicator, Animated, Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import s from './styles/ImageTranslatorScreen.styles';
 import * as FileSystem from 'expo-file-system';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,6 +16,10 @@ import styles from './styles/ImageTranslatorStyles';
 const OCR_API_KEY = process.env.EXPO_PUBLIC_OCR_API_KEY;
 const OPENROUTER_API_KEY = process.env.EXPO_PUBLIC_OPENROUTER_API_KEY;
 const OPENROUTER_MODEL = 'google/gemma-3-4b-it:free';
+
+// Retry config for translation API
+const MAX_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 1500;
 
 const INDIAN_LANGS = [
   { name: 'Hindi', native: 'हिंदी' },
@@ -132,6 +135,10 @@ export default function ImageTranslatorScreen({ navigation }) {
 
   const extractText = async () => {
     if (!imageBase64) return null;
+    if (!OCR_API_KEY) {
+      console.error('[ImageTranslator] OCR_API_KEY is not configured');
+      return null;
+    }
     setLoadingMsg('Extracting text from image...');
     try {
       const fd = new FormData();
@@ -142,41 +149,124 @@ export default function ImageTranslatorScreen({ navigation }) {
       const res = await fetch('https://api.ocr.space/parse/image', {
         method: 'POST', headers: { apikey: OCR_API_KEY }, body: fd,
       });
+      if (!res.ok) {
+        console.error(`[ImageTranslator] OCR API HTTP ${res.status}`);
+        return null;
+      }
       const json = await res.json();
-      if (json.IsErroredOnProcessing) return null;
+      if (json.IsErroredOnProcessing) {
+        console.error('[ImageTranslator] OCR processing error:', json.ErrorMessage || json.ErrorDetails);
+        return null;
+      }
       if (json.ParsedResults?.length > 0) {
         const t = json.ParsedResults.map(r => r.ParsedText).join('\n').trim();
         return t || null;
       }
+      console.warn('[ImageTranslator] OCR returned no parsed results');
       return null;
-    } catch (e) { console.log(e); return null; }
+    } catch (e) {
+      console.error('[ImageTranslator] OCR network error:', e.message);
+      return null;
+    }
   };
 
   const translate = async (text, lang) => {
     setLoadingMsg(`Translating to ${lang}...`);
-    try {
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://touristguide.app',
-        },
-        body: JSON.stringify({
-          model: OPENROUTER_MODEL,
-          messages: [
-            { role: 'system', content: `You are a professional translator. Translate the given text into ${lang}. Return ONLY the translated text, nothing else.` },
-            { role: 'user', content: text },
-          ],
-          max_tokens: 1500,
-        }),
-      });
-      const json = await res.json();
-      return json.choices?.[0]?.message?.content?.trim() || null;
-    } catch (e) { console.log(e); return null; }
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        console.log(`[ImageTranslator] Translation attempt ${attempt}/${MAX_RETRIES} → ${lang}`);
+
+        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://touristguide.app',
+            'X-Title': 'TouristGuide Image Translator',
+          },
+          body: JSON.stringify({
+            model: OPENROUTER_MODEL,
+            messages: [
+              { role: 'system', content: `You are a professional translator. Translate the given text into ${lang}. Return ONLY the translated text, nothing else.` },
+              { role: 'user', content: text },
+            ],
+            max_tokens: 1500,
+            temperature: 0.3,
+          }),
+        });
+
+        // Check HTTP status before parsing
+        if (!res.ok) {
+          const errorBody = await res.text();
+          console.error(`[ImageTranslator] HTTP ${res.status}: ${errorBody}`);
+
+          // Don't retry on auth errors
+          if (res.status === 401 || res.status === 403) {
+            console.error('[ImageTranslator] API key invalid or unauthorized');
+            return null;
+          }
+
+          // Retry on rate limit (429) or server errors (5xx)
+          if ((res.status === 429 || res.status >= 500) && attempt < MAX_RETRIES) {
+            const delay = RETRY_BASE_DELAY_MS * attempt;
+            setLoadingMsg(`Rate limited — retrying in ${Math.round(delay / 1000)}s...`);
+            await new Promise((r) => setTimeout(r, delay));
+            continue;
+          }
+
+          return null;
+        }
+
+        const json = await res.json();
+
+        // Check for OpenRouter error in response body
+        if (json.error) {
+          console.error('[ImageTranslator] API error:', json.error.message || JSON.stringify(json.error));
+          if (attempt < MAX_RETRIES) {
+            const delay = RETRY_BASE_DELAY_MS * attempt;
+            setLoadingMsg(`Error — retrying in ${Math.round(delay / 1000)}s...`);
+            await new Promise((r) => setTimeout(r, delay));
+            continue;
+          }
+          return null;
+        }
+
+        const result = json.choices?.[0]?.message?.content?.trim();
+        if (result) {
+          console.log(`[ImageTranslator] Translation successful on attempt ${attempt}`);
+          return result;
+        }
+
+        console.warn('[ImageTranslator] Empty response from model:', JSON.stringify(json));
+        if (attempt < MAX_RETRIES) {
+          const delay = RETRY_BASE_DELAY_MS * attempt;
+          setLoadingMsg(`Empty response — retrying (${attempt}/${MAX_RETRIES})...`);
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
+        }
+        return null;
+
+      } catch (e) {
+        console.error(`[ImageTranslator] Network error on attempt ${attempt}:`, e.message);
+        if (attempt < MAX_RETRIES) {
+          const delay = RETRY_BASE_DELAY_MS * attempt;
+          setLoadingMsg(`Connection error — retrying (${attempt}/${MAX_RETRIES})...`);
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
+        }
+        return null;
+      }
+    }
+
+    return null;
   };
 
   const extractAndTranslate = async () => {
+    if (!OPENROUTER_API_KEY) {
+      Alert.alert('Configuration Error', 'Translation API key is not configured. Please add EXPO_PUBLIC_OPENROUTER_API_KEY to your .env file.');
+      return;
+    }
     setLoading(true); setExtractedText(''); setTranslatedText('');
     const text = await extractText();
     if (!text) {
@@ -185,7 +275,11 @@ export default function ImageTranslatorScreen({ navigation }) {
     }
     setExtractedText(text);
     const tr = await translate(text, targetLang);
-    setTranslatedText(tr || 'Translation failed. Please try again.');
+    if (!tr) {
+      setTranslatedText('Translation failed after multiple attempts. The AI model may be busy — please try again in a moment.');
+    } else {
+      setTranslatedText(tr);
+    }
     setLoading(false); setLoadingMsg('');
     animateTransition(() => setStep(3));
   };
@@ -223,12 +317,20 @@ export default function ImageTranslatorScreen({ navigation }) {
   const currentLangObj = ALL_LANGS.find((l) => l.name === targetLang) || ALL_LANGS[1];
 
   return (
-    <LinearGradient colors={['#0c0a1d', '#1a1145', '#0c0a1d']} style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.obsidian }]}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>Image Translator</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <TouchableOpacity
+                onPress={() => navigation.goBack()}
+                style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', justifyContent: 'center', alignItems: 'center' }}
+              >
+                <Ionicons name="chevron-back" size={22} color={theme.colors.gold} />
+              </TouchableOpacity>
+              <Text style={styles.title}>Image Translator</Text>
+            </View>
             <Text style={styles.subtitle}>
               {step === 1 && 'Capture or select an image to translate'}
               {step === 2 && 'Choose your target language'}
@@ -243,21 +345,21 @@ export default function ImageTranslatorScreen({ navigation }) {
           {step === 1 && (
             <View style={styles.pickCard}>
               <View style={styles.iconCircle}>
-                <Ionicons name="scan-outline" size={40} color="#a78bfa" />
+                <Ionicons name="scan-outline" size={40} color={theme.colors.gold} />
               </View>
               <Text style={styles.pickTitle}>Scan & Translate</Text>
               <Text style={styles.pickDesc}>
                 Extract and translate text from any image instantly using AI-powered recognition.
               </Text>
               <TouchableOpacity style={styles.camBtn} onPress={pickFromCamera}>
-                <LinearGradient colors={['#8b5cf6', '#6d28d9']} style={styles.gradBtn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-                  <Ionicons name="camera" size={22} color="#fff" />
+                <LinearGradient colors={[theme.colors.gold, '#A8882E']} style={styles.gradBtn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                  <Ionicons name="camera" size={22} color={theme.colors.obsidian} />
                   <Text style={styles.btnText}>Take a Photo</Text>
                 </LinearGradient>
               </TouchableOpacity>
               <TouchableOpacity style={styles.gallBtn} onPress={pickFromGallery}>
                 <View style={styles.outlineBtn}>
-                  <Ionicons name="images" size={22} color="#a78bfa" />
+                  <Ionicons name="images" size={22} color={theme.colors.gold} />
                   <Text style={styles.outlineBtnText}>Choose from Gallery</Text>
                 </View>
               </TouchableOpacity>
@@ -332,7 +434,7 @@ export default function ImageTranslatorScreen({ navigation }) {
                     disabled={loading}
                   >
                     <LinearGradient
-                      colors={loading ? ['#374151', '#1f2937'] : ['#8b5cf6', '#6d28d9']}
+                      colors={loading ? ['#374151', '#1f2937'] : [theme.colors.gold, '#A8882E']}
                       style={styles.gradBtn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
                     >
                       {loading ? (
@@ -342,7 +444,7 @@ export default function ImageTranslatorScreen({ navigation }) {
                         </>
                       ) : (
                         <>
-                          <Ionicons name="language" size={22} color="#fff" style={{ marginRight: 10 }} />
+                          <Ionicons name="language" size={22} color={theme.colors.obsidian} style={{ marginRight: 10 }} />
                           <Text style={styles.translateBtnText}>TRANSLATE TO {targetLang.toUpperCase()}</Text>
                         </>
                       )}
@@ -360,17 +462,17 @@ export default function ImageTranslatorScreen({ navigation }) {
                 <View style={[styles.resultCard, styles.translationCard]}>
                   <View style={styles.cardHeader}>
                     <View style={styles.headerRow}>
-                      <Ionicons name="language" size={20} color="#10b981" />
-                      <Text style={[styles.cardTitle, { color: '#10b981' }]}>
+                      <Ionicons name="language" size={20} color={theme.colors.emerald} />
+                      <Text style={[styles.cardTitle, { color: theme.colors.emerald }]}>
                         Translation ({ALL_LANGS.find(l => l.name === targetLang)?.native})
                       </Text>
                     </View>
                     <TouchableOpacity onPress={() => copyText(translatedText)} style={styles.copyBtn}>
-                      <Ionicons name="copy-outline" size={20} color="#10b981" />
+                      <Ionicons name="copy-outline" size={20} color={theme.colors.emerald} />
                     </TouchableOpacity>
                   </View>
                   {loading ? (
-                    <ActivityIndicator color="#10b981" size="large" style={{ marginVertical: 20 }} />
+                    <ActivityIndicator color={theme.colors.emerald} size="large" style={{ marginVertical: 20 }} />
                   ) : (
                     <Text style={styles.translatedText}>{translatedText}</Text>
                   )}
@@ -380,11 +482,11 @@ export default function ImageTranslatorScreen({ navigation }) {
               <View style={styles.resultCard}>
                 <View style={styles.cardHeader}>
                   <View style={styles.headerRow}>
-                    <Ionicons name="document-text" size={20} color="#a78bfa" />
+                    <Ionicons name="document-text" size={20} color={theme.colors.gold} />
                     <Text style={styles.cardTitle}>Original Text</Text>
                   </View>
                   <TouchableOpacity onPress={() => copyText(extractedText)} style={styles.copyBtn}>
-                    <Ionicons name="copy-outline" size={20} color="#a78bfa" />
+                    <Ionicons name="copy-outline" size={20} color={theme.colors.gold} />
                   </TouchableOpacity>
                 </View>
                 <Text style={styles.resultText}>{extractedText}</Text>
@@ -409,8 +511,8 @@ export default function ImageTranslatorScreen({ navigation }) {
               </ScrollView>
 
               <TouchableOpacity style={styles.newScanWrap} onPress={reset}>
-                <LinearGradient colors={['#6366f1', '#4f46e5']} style={styles.gradBtn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-                  <Ionicons name="scan" size={20} color="#fff" style={{ marginRight: 8 }} />
+                <LinearGradient colors={[theme.colors.gold, '#A8882E']} style={styles.gradBtn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                  <Ionicons name="scan" size={20} color={theme.colors.obsidian} style={{ marginRight: 8 }} />
                   <Text style={styles.actionBtnText}>Start New Scan</Text>
                 </LinearGradient>
               </TouchableOpacity>
@@ -418,6 +520,6 @@ export default function ImageTranslatorScreen({ navigation }) {
           )}
         </Animated.View>
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }

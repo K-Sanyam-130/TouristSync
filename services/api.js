@@ -25,6 +25,12 @@ api.interceptors.request.use(
 );
 
 // Response interceptor: handle 401 globally
+let logoutCallback = null;
+
+export const registerLogoutCallback = (cb) => {
+  logoutCallback = cb;
+};
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -33,7 +39,9 @@ api.interceptors.response.use(
       try {
         await AsyncStorage.removeItem('authToken');
       } catch (_) {}
-      // Navigation to login will be handled by AuthContext
+      if (logoutCallback) {
+        logoutCallback();
+      }
     }
     return Promise.reject(error);
   }

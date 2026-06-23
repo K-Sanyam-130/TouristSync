@@ -43,6 +43,7 @@ const chatRoutes = require('./routes/chat.routes');
 const mediaRoutes = require('./routes/media.routes');
 const albumRoutes = require('./routes/album.routes');
 const achievementRoutes = require('./routes/achievement.routes');
+const sosRoutes = require('./routes/sos.routes');
 
 // ══════════════════════════════════════════════════════════
 //  Initialize Express App
@@ -110,6 +111,7 @@ app.use('/api/chats', chatRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/albums', albumRoutes);
 app.use('/api/achievements', achievementRoutes);
+app.use('/api/sos', sosRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

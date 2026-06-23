@@ -245,4 +245,17 @@ export default StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 14,
   },
+
+  // Category section headers (grouped list)
+  categorySectionHeader: {
+    marginTop: 18,
+    marginBottom: 10,
+    paddingBottom: 6,
+  },
+  categorySectionLine: {
+    height: 2,
+    borderRadius: 1,
+    marginTop: 6,
+    opacity: 0.4,
+  },
 });

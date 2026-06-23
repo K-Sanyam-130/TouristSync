@@ -17,6 +17,7 @@ import WeatherScreen from './screens/WeatherScreen';
 import EmergencyScreen from './screens/EmergencyScreen';
 import VoiceTranslatorScreen from './screens/VoiceTranslatorScreen';
 import SmartNavigationScreen from './screens/SmartNavigationScreen';
+import AIChatScreen from './screens/AIChatScreen';
 
 import LoginScreen from './screens/LoginScreen';
 import SignUpScreen from './screens/SignUpScreen';
@@ -68,6 +69,7 @@ function HomeStack() {
       <HomeStackNav.Screen name="CurrencyConverter" component={CurrencyConverterScreen} />
       <HomeStackNav.Screen name="Weather" component={WeatherScreen} />
       <HomeStackNav.Screen name="Emergency" component={EmergencyScreen} />
+      <HomeStackNav.Screen name="AIChat" component={AIChatScreen} />
     </HomeStackNav.Navigator>
   );
 }

@@ -22,6 +22,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Hooks
@@ -80,6 +81,7 @@ function SpeechEventListener({ eventName, handler }) {
 }
 
 export default function VoiceTranslatorScreen() {
+  const navigation = useNavigation();
   // ─── Language state ───
   const [sourceLang, setSourceLang] = useState(DEFAULT_SOURCE_LANG);
   const [targetLang, setTargetLang] = useState(DEFAULT_TARGET_LANG);
@@ -494,7 +496,15 @@ export default function VoiceTranslatorScreen() {
       {/* ── Header ── */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
-          <Text style={styles.title}>🌐 Voice Translator</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#161b2b', justifyContent: 'center', alignItems: 'center' }}
+            >
+              <Ionicons name="chevron-back" size={20} color="#C9A84C" />
+            </TouchableOpacity>
+            <Text style={styles.title}>🌐 Voice Translator</Text>
+          </View>
           {history.length > 0 && (
             <TouchableOpacity
               onPress={handleClearHistory}

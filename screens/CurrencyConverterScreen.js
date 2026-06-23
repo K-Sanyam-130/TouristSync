@@ -20,6 +20,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNavigation } from '@react-navigation/native';
+import StaggerRevealText from '../components/ui/StaggerRevealText';
 import { useTheme } from '../constants/ThemeContext';
 
 // 45 supported currencies including the ones in the user's screenshot
@@ -85,6 +87,7 @@ function formatNumberString(val) {
 export default function CurrencyConverterScreen({ navigation }) {
   const { theme } = useTheme();
   const { width: screenWidth } = useWindowDimensions();
+  const navigation = useNavigation();
 
   // ─── Currency selection state ───
   const [fromCurrency, setFromCurrency] = useState('USD');
@@ -298,15 +301,17 @@ export default function CurrencyConverterScreen({ navigation }) {
       <StatusBar style="light" />
 
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#ffffff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Currency converter</Text>
-        <View style={{ width: 40 }} />
+      <View style={[styles.header, { backgroundColor: theme.colors.midnight }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', justifyContent: 'center', alignItems: 'center' }}
+          >
+            <Ionicons name="chevron-back" size={22} color={theme.colors.gold} />
+          </TouchableOpacity>
+          <StaggerRevealText text="Currency Converter" style={[theme.typography.displayS, { color: theme.colors.gold }]} />
+        </View>
+        <Text style={[theme.typography.caption, { color: theme.colors.parchment, marginTop: 4 }]}>Live rates from ECB</Text>
       </View>
 
       {/* Conversions Container */}

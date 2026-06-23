@@ -1,12 +1,12 @@
 // screens/ExploreScreen.js
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import {
   View,
   Text,
+  FlatList,
   StyleSheet,
   TextInput,
-  FlatList,
   TouchableOpacity,
   Keyboard,
   Animated,
@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+
 import { INDIA_STATES, INDIA_PLACES } from '../data/indiaPlaces';
 import { useTheme } from '../constants/ThemeContext';
 import { useAuth } from '../constants/AuthContext';
@@ -31,11 +32,20 @@ import PulsingDot from '../components/ui/PulsingDot';
 import FilterChip from '../components/ui/FilterChip';
 import PlaceCard from '../components/ui/PlaceCard';
 import ShimmerSkeleton from '../components/ui/ShimmerSkeleton';
+
 import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_PLACEHOLDER_IMAGES, getPlaceImage } from '../constants/Categories';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
-const filters = ['All', 'Heritage', 'Nature', 'Temple', 'Beach', 'Wildlife'];
+// Filter categories for the filter bar
+const FILTER_OPTIONS = [
+  { key: 'All',      label: 'All',        icon: 'apps',     color: CATEGORY_COLORS.All },
+  { key: 'Heritage', label: 'Heritage',   icon: 'business', color: CATEGORY_COLORS.Heritage },
+  { key: 'Nature',   label: 'Nature',     icon: 'leaf',     color: CATEGORY_COLORS.Nature },
+  { key: 'Temple',   label: 'Temples',    icon: 'heart',    color: CATEGORY_COLORS.Temple },
+  { key: 'Wildlife', label: 'Wildlife',   icon: 'paw',      color: CATEGORY_COLORS.Wildlife },
+  { key: 'Beach',    label: 'Beaches',    icon: 'water',    color: CATEGORY_COLORS.Beach },
+];
 
 
 
@@ -102,10 +112,7 @@ function FeaturedCard({ item, index, onPress }) {
         <Animated.View
           style={{
             position: 'absolute',
-            top: -6,
-            left: -6,
-            right: -6,
-            bottom: -6,
+            top: -6, left: -6, right: -6, bottom: -6,
             borderRadius: 24,
             backgroundColor: categoryColor,
             opacity: glowOpacity,
@@ -190,28 +197,33 @@ export default function ExploreScreen() {
       ).slice(0, 5)
     : [];
 
-  // Filter places from local dataset (instant, offline, has lat/lng)
+  // Filter places from local dataset
   useEffect(() => {
     if (!selectedState) {
       setPlaces([]);
       return;
     }
     setLoading(true);
-    // Small delay to show loading skeleton for polish
     const timer = setTimeout(() => {
-      let filtered = INDIA_PLACES.filter(
+      const allForState = INDIA_PLACES.filter(
         (p) => p.state.toLowerCase() === selectedState.toLowerCase()
       );
-      if (activeFilter !== 'All') {
-        filtered = filtered.filter((p) => p.category === activeFilter);
-      }
-      // Already ranked in data — sort by rank just in case
-      filtered.sort((a, b) => a.rank - b.rank);
-      setPlaces(filtered.slice(0, 10));
+      allForState.sort((a, b) => a.rank - b.rank);
+      setPlaces(allForState);
       setLoading(false);
     }, 350);
     return () => clearTimeout(timer);
-  }, [selectedState, activeFilter]);
+  }, [selectedState]);
+
+  // Apply category filter
+  const filteredPlaces = activeFilter === 'All'
+    ? places
+    : places.filter(p => p.category === activeFilter);
+
+  // Reset filter when switching states
+  useEffect(() => {
+    setActiveFilter('All');
+  }, [selectedState]);
 
   const handleSearchChange = (text) => {
     setSearchText(text);
@@ -223,7 +235,6 @@ export default function ExploreScreen() {
     setSearchText(state);
     setSelectedState(state);
     setShowSuggestions(false);
-    setActiveFilter('All');
     Keyboard.dismiss();
   };
 
@@ -239,7 +250,6 @@ export default function ExploreScreen() {
     setSearchText('');
     setSelectedState(null);
     setShowSuggestions(false);
-    setActiveFilter('All');
   };
 
   const handlePlaceTap = (place) => {
@@ -288,7 +298,7 @@ export default function ExploreScreen() {
               style={[theme.typography.displayL, { color: theme.colors.gold }]}
             />
             <Text style={[theme.typography.caption, { color: theme.colors.parchment, marginTop: 2 }]}>
-              Discover top spots across 32 states
+              Discover top spots across 28 states & 8 UTs
             </Text>
           </View>
           <TouchableOpacity
@@ -345,23 +355,23 @@ export default function ExploreScreen() {
           </View>
         )}
 
-        {/* Filter chips (only when state selected) */}
-        {selectedState && (
+        {/* Category filter bar — only visible after a state is selected */}
+        {selectedState && !loading && places.length > 0 && (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.filterRow}
-            style={{ marginTop: 12, flexGrow: 0 }}
+            style={{ marginTop: 12 }}
           >
-            {filters.map((f, i) => (
+            {FILTER_OPTIONS.map((f, i) => (
               <FilterChip
-                key={f}
-                label={f}
-                isActive={activeFilter === f}
-                onPress={() => setActiveFilter(f)}
+                key={f.key}
+                label={f.label}
+                icon={f.icon}
+                color={f.color}
+                isActive={activeFilter === f.key}
+                onPress={() => setActiveFilter(f.key)}
                 index={i}
-                color={CATEGORY_COLORS[f] || theme.colors.gold}
-                icon={CATEGORY_ICONS[f]}
               />
             ))}
           </ScrollView>
@@ -374,13 +384,13 @@ export default function ExploreScreen() {
           {/* Section header */}
           <View style={styles.sectionHeader}>
             <Text style={[theme.typography.headingS, { color: theme.colors.ivory }]}>
-              {loading ? 'Discovering...' : `Top ${places.length} in ${selectedState}`}
+              {loading ? 'Discovering...' : `${selectedState}`}
             </Text>
-            {!loading && places.length > 0 && (
+            {!loading && filteredPlaces.length > 0 && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <PulsingDot size={5} color={theme.colors.emerald} />
                 <Text style={[theme.typography.caption, { color: theme.colors.emerald }]}>
-                  {places.length} found
+                  {filteredPlaces.length} places
                 </Text>
               </View>
             )}
@@ -392,9 +402,9 @@ export default function ExploreScreen() {
               <ShimmerSkeleton />
               <ShimmerSkeleton />
             </ScrollView>
-          ) : places.length > 0 ? (
+          ) : filteredPlaces.length > 0 ? (
             <FlatList
-              data={places}
+              data={filteredPlaces}
               keyExtractor={(item) => item._id || item.id || item.name}
               renderItem={({ item, index }) => (
                 <PlaceCard place={item} onPress={() => handlePlaceTap(item)} index={index} />
@@ -408,10 +418,10 @@ export default function ExploreScreen() {
                 <Ionicons name="compass-outline" size={56} color={theme.colors.parchment} />
               </Animated.View>
               <Text style={[theme.typography.headingS, { color: theme.colors.parchment, marginTop: 16 }]}>
-                No {activeFilter} places
+                {activeFilter !== 'All' ? `No ${activeFilter} places found` : 'No places found'}
               </Text>
               <Text style={[theme.typography.caption, { color: theme.colors.ash, marginTop: 4 }]}>
-                Try "All" or a different category
+                {activeFilter !== 'All' ? 'Try a different category' : 'Try a different state'}
               </Text>
             </View>
           )}
@@ -482,6 +492,7 @@ export default function ExploreScreen() {
           <View style={{ height: 100 }} />
         </Animated.ScrollView>
       )}
+
     </View>
   );
 }

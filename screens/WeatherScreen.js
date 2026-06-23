@@ -12,6 +12,7 @@ import {
   Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { useTheme } from '../constants/ThemeContext';
 import { INDIA_STATES, INDIA_PLACES } from '../data/indiaPlaces';
@@ -24,7 +25,7 @@ import PressableGoldButton from '../components/ui/PressableGoldButton';
 const { width } = Dimensions.get('window');
 
 // ⚠️ Your OpenWeatherMap API key
-const API_KEY = process.env.EXPO_PUBLIC_WEATHER_API_KEY || '';
+const API_KEY = process.env.EXPO_PUBLIC_WEATHER_API_KEY || '4f3e0fffe917327b826ee8237770c49c';
 
 const WEATHER_ICONS = {
   Clear: 'sunny',
@@ -59,6 +60,7 @@ const windDir = (deg) => {
 
 export default function WeatherScreen() {
   const { theme } = useTheme();
+  const navigation = useNavigation();
 
   const [city, setCity] = useState('');
   const [weatherData, setWeatherData] = useState(null);
@@ -304,7 +306,15 @@ export default function WeatherScreen() {
 
       {/* Header */}
       <View style={[styles.header, { backgroundColor: theme.colors.midnight }]}>
-        <StaggerRevealText text="Weather Forecast" style={[theme.typography.displayS, { color: theme.colors.gold }]} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', justifyContent: 'center', alignItems: 'center' }}
+          >
+            <Ionicons name="chevron-back" size={22} color={theme.colors.gold} />
+          </TouchableOpacity>
+          <StaggerRevealText text="Weather Forecast" style={[theme.typography.displayS, { color: theme.colors.gold }]} />
+        </View>
         <Text style={[theme.typography.caption, { color: theme.colors.parchment, marginTop: 4 }]}>Live conditions · OpenWeatherMap</Text>
 
         {/* Search */}
