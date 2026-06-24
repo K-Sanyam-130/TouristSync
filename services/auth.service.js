@@ -1,70 +1,66 @@
-// services/api.js
-import axios from 'axios';
+// services/auth.service.js — Authentication service layer
+import api from './api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// TEMPORARY FIX FOR APK TESTING
-const API_BASE_URL = 'https://touristsync.onrender.com/api';
-
-console.log('[API] Base URL:', API_BASE_URL);
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 15000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// Attach JWT token
-api.interceptors.request.use(
-  async (config) => {
-    try {
-      const token = await AsyncStorage.getItem('authToken');
-
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-
-      console.log(
-        `[API] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`
-      );
-    } catch (error) {
-      console.log('[API] Token read error:', error.message);
-    }
-
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-// Global logout callback
-let logoutCallback = null;
-
-export const registerLogoutCallback = (cb) => {
-  logoutCallback = cb;
+/**
+ * Register a new user account.
+ * Stores JWT token on success.
+ * @param {string} name - User's full name
+ * @param {string} email - Email address
+ * @param {string} password - Password (min 6 chars)
+ * @returns {Promise<{token: string, user: Object}>}
+ */
+export const register = async (name, email, password) => {
+  const response = await api.post('/auth/register', { name, email, password });
+  const { token, user } = response.data;
+  await AsyncStorage.setItem('authToken', token);
+  return { token, user };
 };
 
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    console.log(
-      '[API ERROR]',
-      error?.response?.status,
-      error?.response?.data || error.message
-    );
+/**
+ * Login with email and password.
+ * Stores JWT token on success.
+ * @param {string} email - Email address
+ * @param {string} password - Password
+ * @returns {Promise<{token: string, user: Object}>}
+ */
+export const login = async (email, password) => {
+  const response = await api.post('/auth/login', { email, password });
+  const { token, user } = response.data;
+  await AsyncStorage.setItem('authToken', token);
+  return { token, user };
+};
 
-    if (error.response?.status === 401) {
-      try {
-        await AsyncStorage.removeItem('authToken');
-      } catch (_) { }
+/**
+ * Get the current authenticated user's profile.
+ * @returns {Promise<Object>} User object
+ */
+export const getMe = async () => {
+  const response = await api.get('/auth/me');
+  return response.data.user;
+};
 
-      if (logoutCallback) {
-        logoutCallback();
-      }
-    }
+/**
+ * Update the current user's profile.
+ * @param {Object} data - Fields to update (name, avatar, preferredLanguage, bio, homeCountry)
+ * @returns {Promise<Object>} Updated user object
+ */
+export const updateProfile = async (data) => {
+  const response = await api.patch('/auth/me', data);
+  return response.data.user;
+};
 
-    return Promise.reject(error);
+
+
+/**
+ * Logout the current user.
+ * Removes JWT token from storage and blacklists on server.
+ */
+export const logout = async () => {
+  try {
+    await api.post('/auth/logout');
+  } catch (_) {
+    // Even if server call fails, clear local token
   }
-);
-
-export default api;
+  await AsyncStorage.removeItem('authToken');
+};
