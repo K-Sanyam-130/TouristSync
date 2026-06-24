@@ -1,3 +1,5 @@
+
+
 // controllers/auth.controller.js — Authentication controller
 const jwt = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
@@ -22,7 +24,7 @@ const generateToken = (id, email) => {
  * @desc    Register a new user
  * @route   POST /api/auth/register
  * @access  Public
- **/
+ */
 const register = asyncHandler(async (req, res) => {
   // Check validation errors
   const errors = validationResult(req);
@@ -69,60 +71,35 @@ const register = asyncHandler(async (req, res) => {
 });
 
 /**
- * /**
  * @desc    Login user with email and password
  * @route   POST /api/auth/login
  * @access  Public
  */
 const login = asyncHandler(async (req, res) => {
-  console.log('\n========== LOGIN ATTEMPT ==========');
-  console.log('Request Body:', JSON.stringify(req.body, null, 2));
-
   const errors = validationResult(req);
-
   if (!errors.isEmpty()) {
-    console.log('❌ Validation Errors:', errors.array());
-
-    return res.status(400).json({
-      success: false,
-      errors: errors.array(),
-    });
+    return res.status(400).json({ success: false, errors: errors.array() });
   }
 
   const { email, password } = req.body;
 
-  console.log('📧 Email:', email);
-
-  // Find user and include passwordHash
+  // Find user and include passwordHash for verification
   const user = await User.findOne({ email }).select('+passwordHash');
-
-  console.log('👤 User Found:', !!user);
-
   if (!user) {
-    console.log('❌ User not found');
-
     return res.status(401).json({
       success: false,
       message: 'Invalid email or password',
     });
   }
 
-  console.log('🔐 Comparing password...');
-
+  // Compare password
   const isMatch = await user.comparePassword(password);
-
-  console.log('🔐 Password Match:', isMatch);
-
   if (!isMatch) {
-    console.log('❌ Password incorrect');
-
     return res.status(401).json({
       success: false,
       message: 'Invalid email or password',
     });
   }
-
-  console.log('✅ Login successful');
 
   // Update last login
   user.lastLogin = new Date();
@@ -130,8 +107,6 @@ const login = asyncHandler(async (req, res) => {
 
   // Generate token
   const token = generateToken(user._id, user.email);
-
-  console.log('🎟️ Token generated');
 
   res.status(200).json({
     success: true,
@@ -149,6 +124,61 @@ const login = asyncHandler(async (req, res) => {
     },
   });
 });
+
+/**
+ * @desc    Get current logged-in user profile
+ * @route   GET /api/auth/me
+ * @access  Private
+ */
+const getMe = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user.id).select('-passwordHash');
+
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: 'User not found',
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    user,
+  });
+});
+
+/**
+ * @desc    Get any user's public profile by ID
+ * @route   GET /api/auth/user/:id
+ * @access  Private
+ */
+const getUserById = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.id).select('-passwordHash');
+
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: 'User not found',
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      _id: user._id,
+      name: user.name,
+      username: user.username || '',
+      avatar: user.avatar || '',
+      bio: user.bio || '',
+      isPrivate: user.isPrivate || false,
+      followerCount: user.followerCount || 0,
+      followingCount: user.followingCount || 0,
+      postCount: user.postCount || 0,
+      lastSeen: user.lastSeen,
+      createdAt: user.createdAt,
+    },
+  });
+});
+
 /**
  * @desc    Update user profile (name, avatar, preferredLanguage, bio, homeCountry)
  * @route   PATCH /api/auth/me
